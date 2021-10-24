@@ -6,6 +6,8 @@ I created it in the context of [rust-lang #2035](https://github.com/rust-lang/rf
 
 I first wrote a [proposal](https://internals.rust-lang.org/t/sieve-tables-for-multiple-traits-objects-box-a-b-c-to-box-a-c-2035/15397) of a new solution to that problem, this repo is mostly so that I can benchmark the propsal. It could be useful to benchmark  other approaches.
 
+Bencmarking is an art I am far from mastering, contributions are welcome. I can add some doc if people are interested.
+
 # Bench results
 
 [`src/fibonacci.rs`](src/fibonacci.rs) implements  an inefficient recursive Fibonacci based on virtual calls. [`benches/fibonacci.rs`](benches/fibonacci.rs) benches it for various number of traits.
@@ -32,10 +34,10 @@ With one trait, `VPtr`, a simulation of Rust current's approach took 402 ns. `Mu
 
 Licensed under either of
 
- * Apache License, Version 2.0
-   ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
- * MIT license
-   ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+* Apache License, Version 2.0
+  ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
+* MIT license
+  ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
 
 at your option.
 
@@ -44,3 +46,7 @@ at your option.
 Unless you explicitly state otherwise, any contribution intentionally submitted
 for inclusion in the work by you, as defined in the Apache-2.0 license, shall be
 dual licensed as above, without any additional terms or conditions.
+
+```
+
+```

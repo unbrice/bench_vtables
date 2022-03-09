@@ -1,12 +1,60 @@
-# SieveTable: experimenting with v-tables
+# SieveTable: v-tables for sum traits
 
-This repo is not production-quality code. Instead it is intended as a playground to experiment with various representation of V-Tables for multiple Rust traits.
+This repo is a playground to experiment with various representation of V-Tables for multiple Rust traits.
 
-I created it in the context of [rust-lang #2035](https://github.com/rust-lang/rfcs/issues/2035#issuecomment-422060294). That is a request to be able to do `Box<A+…+B+…+C>` → `Box<A+B+C>`.
+Specifically, it proposes a representation that:
+- Allows turning a sum trait to a subset of the sum (`Box<A+…+B+…+C>` → `Box<A+B+C>`) without heap allocations.
+- Represent sum trait as a regular two words [fat-pointer](https://stackoverflow.com/questions/57754901/what-is-a-fat-pointer).
+- Performs better than the often discusssed "extra fat" pointers.
 
-I first wrote a [proposal](https://internals.rust-lang.org/t/sieve-tables-for-multiple-traits-objects-box-a-b-c-to-box-a-c-2035/15397) of a new solution to that problem, this repo is mostly so that I can benchmark the propsal. It could be useful to benchmark  other approaches.
+I (unbrice@) created it in the context of [rust-lang #2035](https://github.com/rust-lang/rfcs/issues/2035#issuecomment-422060294). The full [proposal](https://internals.rust-lang.org/t/sieve-tables-for-multiple-traits-objects-box-a-b-c-to-box-a-c-2035/15397) is on Rust Internals. This repo is mostly so that I could benchmark that propsal. It could be useful to benchmark  other approaches.\
+Bencmarking is an art I am far from mastering, contributions are welcome.
 
-Bencmarking is an art I am far from mastering, contributions are welcome. I can add some doc if people are interested.
+# Proposal overview
+
+This a simplified version of the full [proposal](https://internals.rust-lang.org/t/sieve-tables-for-multiple-traits-objects-box-a-b-c-to-box-a-c-2035/15397) on Rust Internals.
+
+Given the traits:
+
+```rust
+trait A { fn func_a(); }
+trait B { fn func_b1(); fn func_b2(); }
+trait C { fn func_c(); }
+```
+
+In this simplified version, there can only been 8 traits in a sum trait. (Note: Refinements[^8bit] can lift this limitation.)
+
+The V-tables equivalent of a sum trait are called sieve-tables and look as follow. The fat pointers to a sum trait are called sieve-ptr and can be approximated as follow.
+
+```
+                          ┌──────────────────┐
+                          │ sieve-ptr of s   │
+                          │ as A+B+C         │
+┌─────────────────┐       ├──────────────────┤
+│ s of type S     │◄──────┤*data             │            ┌┬─────────────────────┬┐
+├─────────────────┤       │sieve: 0...0111   │            ││sieve-table of A+B+C ││
+│...              │       │*sievetable       ├───────────►├┼─────────────────────┼│
+│...              │       └──────────────────┘            ││                     ││
+│...              │                                       ││                     ││
+│...              │       ┌──────────────────┐            ││                     ││
+│...              │       │ sieve-ptr of s   │            ││*vtable_a            ││
+│...              │       │downcasted to A+C │            ││*vtable_b            ││
+│...              │       ├──────────────────┤            ││*vtable_c            ││
+│...              │◄──────┤*data             │            ││                     ││
+└─────────────────┘       │sieve: 0...0101   │            ││                     ││
+                          │*sievetable       ├───────────►││                     ││
+                          └──────────────────┘            ││                     ││
+                                                          └┴─────────────────────┴┘
+```
+
+## Refinements overview
+
+"Refinements" are not all available in all contexts, they are optimisations for specific platforms.
+
+- **Packing** Aligns sieve-table pointers such that the last 8 bits[^8bit] are free to be used for the sieve.
+- **Inlining** Directly put function pointers in the sieve-table, avoiding a deref. This requires a larger sieve[^8bit].
+
+[^8bit]: 8 sieves are a starting point, sufficient for 8 traits without inlining. The proposal mentions [further refinements](https://internals.rust-lang.org/t/sieve-tables-for-multiple-traits-objects-box-a-b-c-to-box-a-c-2035/15397) that can bring it to 44 bits on 64-bit machines but I'm not sure what's the use.
 
 # Bench results
 
@@ -14,21 +62,17 @@ Bencmarking is an art I am far from mastering, contributions are welcome. I can 
 
 On 2021-10-24, I ran on a 2019 Mac `cargo criterion` and observed the following:
 
-|               | Size      | 2 traits | 3 traits | 4 traits | 5 traits |
-| -------------:|:---------:|:--------:|:--------:|:--------:|:--------:|
-| `PackedSieve` | 2 words   | 464 ns   | 488 ns   | 482 ns   | 495 ns   |
-| `InlineSieve` | 3 words   | 510 ns   | 510 ns   | 510 ns   | 510 ns   |
-| `MultiVPtr`   | N+1 words | 472 ns   | 753 ns   | 764 ns   | 831 ns   |
-
-With one trait, `VPtr`, a simulation of Rust current's approach took 402 ns. `MultiVPtr`, which is a simulation of the proposed "extra-fat pointers" took 421 ns.
+|               | Size      | 1 trait | 2 traits | 3 traits | 4 traits | 5 traits |
+| -------------:|:---------:|:--------:|:--------:|:--------:|:--------:|:--------:|
+| `VPtr       ` | 2 words   | 402ns    | -        | -        | -        | -        |
+| `PackedSieve` | 2 words   | -        | 464 ns   | 488 ns   | 482 ns   | 495 ns   |
+| `InlineSieve` | 3 words   | -        | 510 ns   | 510 ns   | 510 ns   | 510 ns   |
+| `MultiVPtr`<br>(Extra-fat pointers)  | N+1 words | -        | 472 ns   | 753 ns   | 764 ns   | 831 ns   |
 
 ## Interpretation
 
-- `PackedSieve` performed almost as well as `MultiVPtr` for 2 traits, and better for all other trait numbers, while also being smaller. 
-
+- `PackedSieve` performed as well as `MultiVPtr` for 2 traits, and better for all other trait numbers, while also being smaller. 
 - `InlineSieve` has the advantage of stable performance, as it does not depend on the number of traits. Nevertheless, it is a bit larger and significantly more complex.
-
-- `MultiVPptr` behaving the same as `VPtr` with a single trait is encouraging.
 
 ## License
 
@@ -46,7 +90,3 @@ at your option.
 Unless you explicitly state otherwise, any contribution intentionally submitted
 for inclusion in the work by you, as defined in the Apache-2.0 license, shall be
 dual licensed as above, without any additional terms or conditions.
-
-```
-
-```

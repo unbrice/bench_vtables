@@ -1,13 +1,15 @@
 # SieveTable: v-tables for sum traits
 
-This repo is a playground to experiment with various representation of V-Tables for multiple Rust traits.
+This repo is a playground to experiment with various representations of V-Tables for multiple Rust traits.
 
 Specifically, it proposes a representation that:
 - Allows turning a sum trait to a subset of the sum (`Box<A+…+B+…+C>` → `Box<A+B+C>`) without heap allocations.
-- Represent sum trait as a regular two words [fat-pointer](https://stackoverflow.com/questions/57754901/what-is-a-fat-pointer).
-- Performs better than the often discusssed "extra fat" pointers.
+- Keeps pointers to a sum-trait type on a regular two words [fat-pointer](https://stackoverflow.com/questions/57754901/what-is-a-fat-pointer).
+- Performs better than the often discussed "extra fat" pointers, at least on my x86_64 machine according to my naive [benchmarks](#bench-results).
+- Does not require full program optimisation (individual crates can remain compiled separately).
+- Offers multiple variants and tuning opportunities for varying architectures.
 
-I (unbrice@) created it in the context of [rust-lang #2035](https://github.com/rust-lang/rfcs/issues/2035#issuecomment-422060294). The full [proposal](https://internals.rust-lang.org/t/sieve-tables-for-multiple-traits-objects-box-a-b-c-to-box-a-c-2035/15397) is on Rust Internals. This repo is mostly so that I could benchmark that propsal. It could be useful to benchmark  other approaches.\
+I (unbrice@) created it in the context of [rust-lang #2035](https://github.com/rust-lang/rfcs/issues/2035#issuecomment-1062770650). The full [proposal](https://internals.rust-lang.org/t/sieve-tables-for-multiple-traits-objects-box-a-b-c-to-box-a-c-2035/15397) is on Rust Internals. This repo is mostly so that I could benchmark that propsal. It could be useful to benchmark  other approaches.\
 Bencmarking is an art I am far from mastering, contributions are welcome.
 
 # Proposal overview

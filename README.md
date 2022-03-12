@@ -2,63 +2,19 @@
 
 This repo is a playground to experiment with various representations of V-Tables for multiple Rust traits.
 
-Specifically, it proposes a representation that:
+I this repo in the context of [rust-lang #2035](https://github.com/rust-lang/rfcs/issues/2035#issuecomment-1062770650). I wrote a blog post [presenting the issue](https://vleu.net/posts/2022/sievetables/#issue) as well as [a proposed solution](https://vleu.net/posts/2022/sievetables/#proposal). This repo is mostly so that I could benchmark that propsal. It could be useful to benchmark other approaches.
+
+To give an overview, it proposes a representation that:
 - Allows turning a sum trait to a subset of the sum (`Box<A+…+B+…+C>` → `Box<A+B+C>`) without heap allocations.
 - Keeps pointers to a sum-trait type on a regular two words [fat-pointer](https://stackoverflow.com/questions/57754901/what-is-a-fat-pointer).
 - Performs better than the often discussed "extra fat" pointers, at least on my x86_64 machine according to my naive [benchmarks](#bench-results).
 - Does not require full program optimisation (individual crates can remain compiled separately).
 - Offers multiple variants and tuning opportunities for varying architectures.
 
-I (unbrice@) created it in the context of [rust-lang #2035](https://github.com/rust-lang/rfcs/issues/2035#issuecomment-1062770650). The full [proposal](https://internals.rust-lang.org/t/sieve-tables-for-multiple-traits-objects-box-a-b-c-to-box-a-c-2035/15397) is on Rust Internals. This repo is mostly so that I could benchmark that propsal. It could be useful to benchmark  other approaches.\
+More details in [the blog post](https://vleu.net/posts/2022/sievetables/).
 Bencmarking is an art I am far from mastering, contributions are welcome.
 
-# Proposal overview
-
-This a simplified version of the full [proposal](https://internals.rust-lang.org/t/sieve-tables-for-multiple-traits-objects-box-a-b-c-to-box-a-c-2035/15397) on Rust Internals.
-
-Given the traits:
-
-```rust
-trait A { fn func_a(); }
-trait B { fn func_b1(); fn func_b2(); }
-trait C { fn func_c(); }
-```
-
-In this simplified version, there can only been 8 traits in a sum trait. (Note: Refinements[^8bit] can lift this limitation.)
-
-The V-tables equivalent of a sum trait are called sieve-tables and look as follow. The fat pointers to a sum trait are called sieve-ptr and can be approximated as follow.
-
-```
-                          ┌──────────────────┐
-                          │ sieve-ptr of s   │
-                          │ as A+B+C         │
-┌─────────────────┐       ├──────────────────┤
-│ s of type S     │◄──────┤*data             │            ┌┬─────────────────────┬┐
-├─────────────────┤       │sieve: 0...0111   │            ││sieve-table of A+B+C ││
-│...              │       │*sievetable       ├───────────►├┼─────────────────────┼│
-│...              │       └──────────────────┘            ││                     ││
-│...              │                                       ││                     ││
-│...              │       ┌──────────────────┐            ││                     ││
-│...              │       │ sieve-ptr of s   │            ││*vtable_a            ││
-│...              │       │downcasted to A+C │            ││*vtable_b            ││
-│...              │       ├──────────────────┤            ││*vtable_c            ││
-│...              │◄──────┤*data             │            ││                     ││
-└─────────────────┘       │sieve: 0...0101   │            ││                     ││
-                          │*sievetable       ├───────────►││                     ││
-                          └──────────────────┘            ││                     ││
-                                                          └┴─────────────────────┴┘
-```
-
-## Refinements overview
-
-"Refinements" are not all available in all contexts, they are optimisations for specific platforms.
-
-- **Packing** Aligns sieve-table pointers such that the last 8 bits[^8bit] are free to be used for the sieve.
-- **Inlining** Directly put function pointers in the sieve-table, avoiding a deref. This requires a larger sieve[^8bit].
-
-[^8bit]: 8 sieves are a starting point, sufficient for 8 traits without inlining. The proposal mentions [further refinements](https://internals.rust-lang.org/t/sieve-tables-for-multiple-traits-objects-box-a-b-c-to-box-a-c-2035/15397) that can bring it to 44 bits on 64-bit machines but I'm not sure what's the use.
-
-# Bench results
+## Bench results
 
 [`src/fibonacci.rs`](src/fibonacci.rs) implements  an inefficient recursive Fibonacci based on virtual calls. [`benches/fibonacci.rs`](benches/fibonacci.rs) benches it for various number of traits.
 
@@ -71,7 +27,7 @@ On 2021-10-24, I ran on a 2019 Mac `cargo criterion` and observed the following:
 | `InlineSieve` | 3 words   | -        | 510 ns   | 510 ns   | 510 ns   | 510 ns   |
 | `MultiVPtr`<br>(Extra-fat pointers)  | N+1 words | -        | 472 ns   | 753 ns   | 764 ns   | 831 ns   |
 
-## Interpretation
+### Interpretation
 
 - `PackedSieve` performed as well as `MultiVPtr` for 2 traits, and better for all other trait numbers, while also being smaller. 
 - `InlineSieve` has the advantage of stable performance, as it does not depend on the number of traits. Nevertheless, it is a bit larger and significantly more complex.
